@@ -23,7 +23,8 @@ def usd(val):
     return f"${val:,.0f}"
 
 
-def format_partner_report(partner_name, subscriptions, bookings):
+def format_partner_report(partner_name, subscriptions, bookings,
+                          details=None, open_pipeline=None):
     lines = []
     div = "═" * 70
     thin = "─" * 70
@@ -33,13 +34,84 @@ def format_partner_report(partner_name, subscriptions, bookings):
     lines.append(f"  PARTNER SUMMARY: {partner_name.upper()}")
     lines.append(div)
 
+    if details is not None:
+        _format_partner_details(lines, details, thin)
+        lines.append("")
+
     _format_book_of_business(lines, subscriptions, thin)
     lines.append("")
     _format_bookings(lines, bookings, thin)
 
+    if open_pipeline is not None:
+        lines.append("")
+        _format_open_pipeline(lines, open_pipeline, thin)
+
     lines.append("")
     lines.append(div)
     return "\n".join(lines)
+
+
+def _format_partner_details(lines, rows, divider):
+    lines.append("")
+    lines.append("  PARTNER DETAILS (Salesforce)")
+    lines.append(divider)
+
+    if not rows:
+        lines.append("  No partner account found in Salesforce.")
+        return
+
+    for row in rows:
+        lines.append("")
+        lines.append(f"  Partner:          {row.get('PARTNER_NAME', 'N/A')}")
+        lines.append(f"  Account Owner:    {row.get('ACCOUNT_OWNER', 'N/A')}")
+        lines.append(f"  Type:             {row.get('ACCOUNT_TYPE', 'N/A')}")
+        lines.append(f"  Partner Type:     {row.get('PARTNER_TYPE', 'N/A')}")
+        lines.append(f"  Channel Category: {row.get('CHANNEL_CATEGORY', 'N/A')}")
+        lines.append(f"  Partner Level:    {row.get('PARTNER_LEVEL', 'N/A')}")
+        lines.append(f"  Status:           {row.get('PARTNER_STATUS', 'N/A')}")
+        lines.append(f"  Agreement Signed: {row.get('SIGNED_AGREEMENT', 'N/A')}")
+        agreement_date = row.get('AGREEMENT_DATE')
+        lines.append(f"  Agreement Date:   {str(agreement_date)[:10] if agreement_date else 'N/A'}")
+        lines.append(f"  Serviced Region:  {row.get('SERVICED_REGION', 'N/A')}")
+
+
+def _format_open_pipeline(lines, rows, divider):
+    lines.append("  3. OPEN PIPELINE (Stages 02-06)")
+    lines.append(divider)
+
+    if not rows:
+        lines.append("  No open pipeline found.")
+        return
+
+    by_source = defaultdict(lambda: {"arr": 0, "count": 0})
+    for row in rows:
+        src = row.get("SOURCED_INFLUENCED") or row.get("PARTNER_DEAL_SOURCE") or "Unknown"
+        by_source[src]["arr"] += row.get("PRODUCT_ARR_USD", 0) or 0
+        by_source[src]["count"] += 1
+
+    total_arr = sum(v["arr"] for v in by_source.values())
+    total_deals = sum(v["count"] for v in by_source.values())
+
+    lines.append("")
+    lines.append(f"  Total Open Pipeline:  {usd(total_arr)}  ({total_deals} deals)")
+    lines.append("")
+    lines.append("  By Partner Deal Source:")
+    for src, v in sorted(by_source.items(), key=lambda x: x[1]["arr"], reverse=True):
+        lines.append(f"    {src:<30} {usd(v['arr']):>14}  ({v['count']} deals)")
+
+    top5 = rows[:5]
+    if top5:
+        lines.append("")
+        lines.append("  Top 5 Opportunities:")
+        lines.append(f"  {'Account':<30} {'Deal Type':<15} {'Source':<20} {'ARR (USD)':>14}")
+        lines.append(f"  {'─'*30} {'─'*15} {'─'*20} {'─'*14}")
+        for row in top5:
+            acct = row.get("CRM_ACCOUNT_NAME", "N/A")
+            acct = acct[:27] + "..." if len(str(acct)) > 30 else acct
+            deal = row.get("DEAL_TYPE", "N/A") or "N/A"
+            src = row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A"
+            arr = row.get("PRODUCT_ARR_USD", 0) or 0
+            lines.append(f"  {str(acct):<30} {str(deal):<15} {str(src):<20} {usd(arr):>14}")
 
 
 def _format_book_of_business(lines, rows, divider):

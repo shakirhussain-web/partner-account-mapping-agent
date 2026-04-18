@@ -65,7 +65,8 @@ class PartnerReport(FPDF):
         self.ln()
 
 
-def generate_pdf(partner_name, subscriptions, bookings):
+def generate_pdf(partner_name, subscriptions, bookings,
+                  details=None, open_pipeline=None):
     pdf = PartnerReport(partner_name)
     pdf.add_page()
 
@@ -78,15 +79,87 @@ def generate_pdf(partner_name, subscriptions, bookings):
     pdf.cell(0, 6, f"Generated: {date.today().isoformat()}", ln=True)
     pdf.ln(6)
 
+    if details is not None:
+        _pdf_partner_details(pdf, details)
+        pdf.ln(4)
+
     _pdf_book_of_business(pdf, subscriptions)
     pdf.ln(4)
     _pdf_bookings(pdf, bookings)
+
+    if open_pipeline is not None:
+        pdf.ln(4)
+        _pdf_open_pipeline(pdf, open_pipeline)
 
     filename = f"{partner_name.replace(' ', '_')}_Partner_Summary_{date.today().isoformat()}.pdf"
     filepath = os.path.join(OUTPUT_DIR, filename)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     pdf.output(filepath)
     return filepath
+
+
+def _pdf_partner_details(pdf, rows):
+    pdf.section_title("Partner Details (Salesforce)")
+
+    if not rows:
+        pdf.set_font("ArialUni", "", 10)
+        pdf.cell(0, 8, "No partner account found in Salesforce.", ln=True)
+        return
+
+    for row in rows:
+        pdf.label_value("Partner:", str(row.get("PARTNER_NAME", "N/A")))
+        pdf.label_value("Account Owner:", str(row.get("ACCOUNT_OWNER", "N/A")))
+        pdf.label_value("Type:", str(row.get("ACCOUNT_TYPE", "N/A")))
+        pdf.label_value("Partner Type:", str(row.get("PARTNER_TYPE", "N/A")))
+        pdf.label_value("Channel Category:", str(row.get("CHANNEL_CATEGORY", "N/A")))
+        pdf.label_value("Partner Level:", str(row.get("PARTNER_LEVEL", "N/A")))
+        pdf.label_value("Status:", str(row.get("PARTNER_STATUS", "N/A")))
+        pdf.label_value("Agreement Signed:", str(row.get("SIGNED_AGREEMENT", "N/A")))
+        ag_date = row.get("AGREEMENT_DATE")
+        pdf.label_value("Agreement Date:", str(ag_date)[:10] if ag_date else "N/A")
+        pdf.label_value("Serviced Region:", str(row.get("SERVICED_REGION", "N/A")))
+        pdf.ln(4)
+
+
+def _pdf_open_pipeline(pdf, rows):
+    pdf.section_title("3. Open Pipeline (Stages 02-06)")
+
+    if not rows:
+        pdf.set_font("ArialUni", "", 10)
+        pdf.cell(0, 8, "No open pipeline found.", ln=True)
+        return
+
+    by_source = defaultdict(lambda: {"arr": 0, "count": 0})
+    for row in rows:
+        src = row.get("SOURCED_INFLUENCED") or row.get("PARTNER_DEAL_SOURCE") or "Unknown"
+        by_source[src]["arr"] += row.get("PRODUCT_ARR_USD", 0) or 0
+        by_source[src]["count"] += 1
+
+    total_arr = sum(v["arr"] for v in by_source.values())
+    total_deals = sum(v["count"] for v in by_source.values())
+
+    pdf.label_value("Total Open Pipeline:", f"{usd(total_arr)}  ({total_deals} deals)")
+    pdf.ln(2)
+
+    pdf.sub_heading("By Partner Deal Source")
+    cols = [("Source", 70), ("ARR (USD)", 35), ("Deals", 20)]
+    pdf.table_header(cols)
+    for src, v in sorted(by_source.items(), key=lambda x: x[1]["arr"], reverse=True):
+        pdf.table_row(cols, [src, usd(v["arr"]), str(v["count"])])
+    pdf.ln(4)
+
+    top5 = rows[:5]
+    if top5:
+        pdf.sub_heading("Top 5 Opportunities")
+        cols = [("Account", 55), ("Deal Type", 30), ("Source", 40), ("ARR (USD)", 30)]
+        pdf.table_header(cols)
+        for row in top5:
+            acct = str(row.get("CRM_ACCOUNT_NAME", "N/A"))
+            acct = acct[:28] + ".." if len(acct) > 30 else acct
+            deal = str(row.get("DEAL_TYPE", "N/A") or "N/A")
+            src = str(row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A")
+            arr = row.get("PRODUCT_ARR_USD", 0) or 0
+            pdf.table_row(cols, [acct, deal, src, usd(arr)])
 
 
 def _pdf_book_of_business(pdf, rows):

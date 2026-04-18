@@ -143,3 +143,73 @@ WHERE partner IS NOT NULL
   AND product_booking_arr_usd > 0
   AND {name_filter}
 """
+
+
+def partner_details_query(names):
+    name_filter = _like_clause("a.name", names)
+    return f"""
+SELECT
+    a.name AS partner_name,
+    a.type AS account_type,
+    a.channel_category_c AS channel_category,
+    a.partner_level_c AS partner_level,
+    a.signed_agreement_c AS signed_agreement,
+    a.agreement_date_c AS agreement_date,
+    a.partner_type_c AS partner_type,
+    a.partner_status_c AS partner_status,
+    a.partner_serviced_region_c AS serviced_region,
+    u.name AS account_owner
+FROM cleansed.salesforce.salesforce_account_bcv a
+LEFT JOIN cleansed.salesforce.salesforce_user_bcv u ON a.owner_id = u.id
+WHERE {name_filter}
+  AND a.record_type_id = '01280000000Hi8UAAS'
+  AND a.partner_status_c = 'Authorized'
+ORDER BY a.name
+"""
+
+
+def partner_open_pipeline_query(names):
+    name_filter = _like_clause("part.partner", names)
+    return f"""
+WITH open_pipeline AS (
+  SELECT
+      gtm.crm_opportunity_id,
+      gtm.crm_account_name,
+      gtm.stage_name,
+      gtm.closedate,
+      gtm.product_arr_usd,
+      gtm.product_booking_arr_usd,
+      part.deal_type,
+      part.partner,
+      part.partner_deal_source,
+      CASE
+        WHEN part.partner IS NOT NULL AND part.partner_deal_source = 'Partner Sourced' THEN 'Partner Sourced'
+        WHEN part.partner IS NOT NULL AND part.partner_deal_source = 'Zendesk Sourced' THEN 'Partner Influenced'
+        ELSE NULL
+      END AS sourced_influenced
+  FROM FUNCTIONAL.GTM_SALES_OPS.GTMSI_CONSOLIDATED_PIPELINE_BOOKINGS gtm
+  LEFT JOIN FUNCTIONAL.GTM_SALES_OPS.PARTNER_OPP_TABLE_ALL part
+    ON part.id = gtm.crm_opportunity_id
+  WHERE gtm.date_label = 'today'
+    AND gtm.stage_2_plus_date_c IS NOT NULL
+    AND gtm.opportunity_is_commissionable = TRUE
+    AND gtm.stage_name IN ('02 - Confirm Need', '03 - Establish Value', '04 - Demonstrate Value', '05 - Secure Commitment', '06 - Contracting')
+    AND {name_filter}
+)
+
+SELECT
+    crm_opportunity_id,
+    crm_account_name,
+    stage_name,
+    closedate,
+    product_arr_usd,
+    product_booking_arr_usd,
+    deal_type,
+    partner,
+    partner_deal_source,
+    sourced_influenced
+FROM open_pipeline
+WHERE partner IS NOT NULL
+  AND product_arr_usd > 0
+ORDER BY product_arr_usd DESC
+"""

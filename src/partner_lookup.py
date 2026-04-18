@@ -3,7 +3,8 @@ import json
 import os
 import sys
 from snowflake_conn import execute_query, close
-from queries import reseller_subscriptions_query, partner_bookings_query
+from queries import (reseller_subscriptions_query, partner_bookings_query,
+                     partner_details_query, partner_open_pipeline_query)
 from format import format_partner_report
 from pdf_report import generate_pdf
 
@@ -40,6 +41,10 @@ def main():
         print(f"  Including aliases: {', '.join(search_names)}")
     print("Connecting to Snowflake (SSO browser will open)...\n")
 
+    print("  Running partner details query...")
+    details = execute_query(partner_details_query(search_names))
+    print(f"  Partner details: {len(details)} rows")
+
     print("  Running reseller subscriptions query...")
     subscriptions = execute_query(reseller_subscriptions_query(search_names))
     print(f"  Reseller query: {len(subscriptions)} rows")
@@ -48,11 +53,17 @@ def main():
     bookings = execute_query(partner_bookings_query(search_names))
     print(f"  Bookings query: {len(bookings)} rows")
 
-    report = format_partner_report(partner_name, subscriptions, bookings)
+    print("  Running open pipeline query...")
+    open_pipeline = execute_query(partner_open_pipeline_query(search_names))
+    print(f"  Open pipeline: {len(open_pipeline)} rows")
+
+    report = format_partner_report(partner_name, subscriptions, bookings,
+                                   details=details, open_pipeline=open_pipeline)
     print(report)
 
     print("\n  Generating PDF...")
-    pdf_path = generate_pdf(partner_name, subscriptions, bookings)
+    pdf_path = generate_pdf(partner_name, subscriptions, bookings,
+                            details=details, open_pipeline=open_pipeline)
     print(f"  PDF saved: {pdf_path}")
 
     close()

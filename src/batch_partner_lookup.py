@@ -4,7 +4,8 @@ import os
 import sys
 import openpyxl
 from snowflake_conn import get_connection, execute_query, close
-from queries import reseller_subscriptions_query, partner_bookings_query
+from queries import (reseller_subscriptions_query, partner_bookings_query,
+                     partner_details_query, partner_open_pipeline_query)
 from format import format_partner_report
 from pdf_report import generate_pdf
 
@@ -85,13 +86,17 @@ def main():
         print(f"[{i}/{len(partners)}] {label}")
 
         try:
+            details = execute_query(partner_details_query(search_names))
             subs = execute_query(reseller_subscriptions_query(search_names))
             bookings = execute_query(partner_bookings_query(search_names))
+            open_pipe = execute_query(partner_open_pipeline_query(search_names))
 
-            report = format_partner_report(display_name, subs, bookings)
+            report = format_partner_report(display_name, subs, bookings,
+                                           details=details, open_pipeline=open_pipe)
             print(report)
 
-            pdf_path = generate_pdf(display_name, subs, bookings)
+            pdf_path = generate_pdf(display_name, subs, bookings,
+                                    details=details, open_pipeline=open_pipe)
             print(f"  PDF saved: {pdf_path}\n")
         except Exception as e:
             print(f"  ERROR: {e}\n")
