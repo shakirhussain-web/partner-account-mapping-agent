@@ -122,7 +122,7 @@ def _pdf_partner_details(pdf, rows):
 
 
 def _pdf_open_pipeline(pdf, rows):
-    from format import _quarter_bounds, _bucket_deal
+    from format import _quarter_bounds, _bucket_deal, _collapse_opps
 
     pdf.section_title("3. Open Pipeline (Stages 02-06)")
 
@@ -170,22 +170,23 @@ def _pdf_open_pipeline(pdf, rows):
     pdf.ln()
     pdf.ln(4)
 
-    sorted_rows = sorted(rows, key=lambda r: str(r.get("CLOSEDATE") or "9999"))
-    top5 = sorted_rows[:5]
+    opps = _collapse_opps(rows)
+    sorted_opps = sorted(opps, key=lambda o: str(o["closedate"] or "9999"))
+    top5 = sorted_opps[:5]
     if top5:
         pdf.sub_heading("Top 5 Opportunities")
-        cols = [("Account", 45), ("Deal Type", 25), ("Source", 35), ("Close Date", 25), ("ARR (USD)", 25)]
+        cols = [("Account", 30), ("Products", 40), ("Deal Type", 20), ("Source", 28), ("Close", 20), ("ARR", 20)]
         pdf.table_header(cols)
-        for row in top5:
-            acct = str(row.get("CRM_ACCOUNT_NAME", "N/A"))
-            acct = acct[:24] + ".." if len(acct) > 26 else acct
-            deal = str(row.get("DEAL_TYPE", "N/A") or "N/A")
-            src = str(row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A")
-            src = src[:18] + ".." if len(src) > 20 else src
-            cd = row.get("CLOSEDATE")
-            cd_str = str(cd)[:10] if cd else "N/A"
-            arr = row.get("PRODUCT_ARR_USD", 0) or 0
-            pdf.table_row(cols, [acct, deal, src, cd_str, usd(arr)])
+        for opp in top5:
+            acct = str(opp["account"])
+            acct = acct[:16] + ".." if len(acct) > 18 else acct
+            prod = opp["products"]
+            prod = prod[:22] + ".." if len(prod) > 24 else prod
+            deal = str(opp["deal_type"])
+            src = str(opp["source"])
+            src = src[:14] + ".." if len(src) > 16 else src
+            cd_str = str(opp["closedate"])[:10] if opp["closedate"] else "N/A"
+            pdf.table_row(cols, [acct, prod, deal, src, cd_str, usd(opp["arr"])])
 
 
 def _pdf_book_of_business(pdf, rows):

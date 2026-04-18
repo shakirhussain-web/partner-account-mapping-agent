@@ -116,6 +116,36 @@ def _bucket_deal(close_date, cq_start, cq1_start, cq1_end):
     return "other"
 
 
+def _collapse_opps(rows):
+    opps = {}
+    for row in rows:
+        opp_id = row.get("CRM_OPPORTUNITY_ID")
+        if not opp_id:
+            continue
+        product = str(row.get("PRODUCT", "") or "")
+        if opp_id not in opps:
+            opps[opp_id] = {
+                "account": row.get("CRM_ACCOUNT_NAME", "N/A"),
+                "deal_type": row.get("DEAL_TYPE", "N/A") or "N/A",
+                "source": row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A",
+                "closedate": row.get("CLOSEDATE"),
+                "arr": 0,
+                "products": [],
+            }
+        opp = opps[opp_id]
+        if product.lower() == "total booking":
+            opp["arr"] = row.get("PRODUCT_ARR_USD", 0) or 0
+        else:
+            if product and product not in opp["products"]:
+                opp["products"].append(product)
+
+    result = []
+    for opp in opps.values():
+        opp["products"] = ", ".join(opp["products"]) if opp["products"] else "N/A"
+        result.append(opp)
+    return result
+
+
 def _format_open_pipeline(lines, rows, divider):
     lines.append("  3. OPEN PIPELINE (Stages 02-06)")
     lines.append(divider)
@@ -156,23 +186,25 @@ def _format_open_pipeline(lines, rows, divider):
     lines.append(f"  {'─'*25} {'─'*14} {'─'*14} {'─'*14} {'─'*8}")
     lines.append(f"  {'TOTAL':<25} {usd(grand['cq']):>14} {usd(grand['cq1']):>14} {usd(grand['total']):>14} {grand['count']:>8}")
 
-    sorted_rows = sorted(rows, key=lambda r: str(r.get("CLOSEDATE") or "9999"))
-    top5 = sorted_rows[:5]
+    opps = _collapse_opps(rows)
+    sorted_opps = sorted(opps, key=lambda o: str(o["closedate"] or "9999"))
+    top5 = sorted_opps[:5]
     if top5:
         lines.append("")
         lines.append("  Top 5 Opportunities:")
-        lines.append(f"  {'Account':<28} {'Deal Type':<15} {'Source':<18} {'Close Date':>12} {'ARR (USD)':>14}")
-        lines.append(f"  {'─'*28} {'─'*15} {'─'*18} {'─'*12} {'─'*14}")
-        for row in top5:
-            acct = row.get("CRM_ACCOUNT_NAME", "N/A")
-            acct = acct[:25] + "..." if len(str(acct)) > 28 else acct
-            deal = row.get("DEAL_TYPE", "N/A") or "N/A"
-            src = row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A"
-            src = src[:15] + "..." if len(str(src)) > 18 else src
-            cd = row.get("CLOSEDATE")
-            cd_str = str(cd)[:10] if cd else "N/A"
-            arr = row.get("PRODUCT_ARR_USD", 0) or 0
-            lines.append(f"  {str(acct):<28} {str(deal):<15} {str(src):<18} {cd_str:>12} {usd(arr):>14}")
+        lines.append(f"  {'Account':<25} {'Products':<30} {'Deal Type':<12} {'Source':<16} {'Close Date':>12} {'ARR (USD)':>12}")
+        lines.append(f"  {'─'*25} {'─'*30} {'─'*12} {'─'*16} {'─'*12} {'─'*12}")
+        for opp in top5:
+            acct = str(opp["account"])
+            acct = acct[:22] + "..." if len(acct) > 25 else acct
+            prod = opp["products"]
+            prod = prod[:27] + "..." if len(prod) > 30 else prod
+            deal = str(opp["deal_type"])
+            deal = deal[:9] + "..." if len(deal) > 12 else deal
+            src = str(opp["source"])
+            src = src[:13] + "..." if len(src) > 16 else src
+            cd_str = str(opp["closedate"])[:10] if opp["closedate"] else "N/A"
+            lines.append(f"  {acct:<25} {prod:<30} {deal:<12} {src:<16} {cd_str:>12} {usd(opp['arr']):>12}")
 
 
 def _format_book_of_business(lines, rows, divider):
