@@ -168,18 +168,22 @@ def _pdf_open_pipeline(pdf, rows):
     pdf.ln()
     pdf.ln(4)
 
-    top5 = rows[:5]
+    sorted_rows = sorted(rows, key=lambda r: str(r.get("CLOSEDATE") or "9999"))
+    top5 = sorted_rows[:5]
     if top5:
         pdf.sub_heading("Top 5 Opportunities")
-        cols = [("Account", 55), ("Deal Type", 30), ("Source", 40), ("ARR (USD)", 30)]
+        cols = [("Account", 45), ("Deal Type", 25), ("Source", 35), ("Close Date", 25), ("ARR (USD)", 25)]
         pdf.table_header(cols)
         for row in top5:
             acct = str(row.get("CRM_ACCOUNT_NAME", "N/A"))
-            acct = acct[:28] + ".." if len(acct) > 30 else acct
+            acct = acct[:24] + ".." if len(acct) > 26 else acct
             deal = str(row.get("DEAL_TYPE", "N/A") or "N/A")
             src = str(row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A")
+            src = src[:18] + ".." if len(src) > 20 else src
+            cd = row.get("CLOSEDATE")
+            cd_str = str(cd)[:10] if cd else "N/A"
             arr = row.get("PRODUCT_ARR_USD", 0) or 0
-            pdf.table_row(cols, [acct, deal, src, usd(arr)])
+            pdf.table_row(cols, [acct, deal, src, cd_str, usd(arr)])
 
 
 def _pdf_book_of_business(pdf, rows):

@@ -156,19 +156,23 @@ def _format_open_pipeline(lines, rows, divider):
     lines.append(f"  {'─'*25} {'─'*14} {'─'*14} {'─'*14} {'─'*8}")
     lines.append(f"  {'TOTAL':<25} {usd(grand['cq']):>14} {usd(grand['cq1']):>14} {usd(grand['total']):>14} {grand['count']:>8}")
 
-    top5 = rows[:5]
+    sorted_rows = sorted(rows, key=lambda r: str(r.get("CLOSEDATE") or "9999"))
+    top5 = sorted_rows[:5]
     if top5:
         lines.append("")
         lines.append("  Top 5 Opportunities:")
-        lines.append(f"  {'Account':<30} {'Deal Type':<15} {'Source':<20} {'ARR (USD)':>14}")
-        lines.append(f"  {'─'*30} {'─'*15} {'─'*20} {'─'*14}")
+        lines.append(f"  {'Account':<28} {'Deal Type':<15} {'Source':<18} {'Close Date':>12} {'ARR (USD)':>14}")
+        lines.append(f"  {'─'*28} {'─'*15} {'─'*18} {'─'*12} {'─'*14}")
         for row in top5:
             acct = row.get("CRM_ACCOUNT_NAME", "N/A")
-            acct = acct[:27] + "..." if len(str(acct)) > 30 else acct
+            acct = acct[:25] + "..." if len(str(acct)) > 28 else acct
             deal = row.get("DEAL_TYPE", "N/A") or "N/A"
             src = row.get("PARTNER_DEAL_SOURCE", "N/A") or "N/A"
+            src = src[:15] + "..." if len(str(src)) > 18 else src
+            cd = row.get("CLOSEDATE")
+            cd_str = str(cd)[:10] if cd else "N/A"
             arr = row.get("PRODUCT_ARR_USD", 0) or 0
-            lines.append(f"  {str(acct):<30} {str(deal):<15} {str(src):<20} {usd(arr):>14}")
+            lines.append(f"  {str(acct):<28} {str(deal):<15} {str(src):<18} {cd_str:>12} {usd(arr):>14}")
 
 
 def _format_book_of_business(lines, rows, divider):
