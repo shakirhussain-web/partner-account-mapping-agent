@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date
 
 PER_USD = {
     "USD": 1,
@@ -60,19 +61,59 @@ def _format_partner_details(lines, rows, divider):
         lines.append("  No partner account found in Salesforce.")
         return
 
+    lines.append("")
+    lines.append(f"  {'Partner':<35} {'Owner':<20} {'Partner Tier':<12} {'Agreement':<25} {'Date':>10}")
+    lines.append(f"  {'─'*35} {'─'*20} {'─'*12} {'─'*25} {'─'*10}")
     for row in rows:
-        lines.append("")
-        lines.append(f"  Partner:          {row.get('PARTNER_NAME', 'N/A')}")
-        lines.append(f"  Account Owner:    {row.get('ACCOUNT_OWNER', 'N/A')}")
-        lines.append(f"  Type:             {row.get('ACCOUNT_TYPE', 'N/A')}")
-        lines.append(f"  Partner Type:     {row.get('PARTNER_TYPE', 'N/A')}")
-        lines.append(f"  Channel Category: {row.get('CHANNEL_CATEGORY', 'N/A')}")
-        lines.append(f"  Partner Level:    {row.get('PARTNER_LEVEL', 'N/A')}")
-        lines.append(f"  Status:           {row.get('PARTNER_STATUS', 'N/A')}")
-        lines.append(f"  Agreement Signed: {row.get('SIGNED_AGREEMENT', 'N/A')}")
-        agreement_date = row.get('AGREEMENT_DATE')
-        lines.append(f"  Agreement Date:   {str(agreement_date)[:10] if agreement_date else 'N/A'}")
-        lines.append(f"  Serviced Region:  {row.get('SERVICED_REGION', 'N/A')}")
+        name = str(row.get('PARTNER_NAME', 'N/A'))
+        name = name[:32] + "..." if len(name) > 35 else name
+        owner = str(row.get('ACCOUNT_OWNER', 'N/A'))
+        owner = owner[:17] + "..." if len(owner) > 20 else owner
+        tier = str(row.get('CHANNEL_CATEGORY') or 'N/A')
+        agreement = str(row.get('SIGNED_AGREEMENT') or 'N/A')
+        agreement = agreement[:22] + "..." if len(agreement) > 25 else agreement
+        ag_date = row.get('AGREEMENT_DATE')
+        date_str = str(ag_date)[:10] if ag_date else "N/A"
+        lines.append(f"  {name:<35} {owner:<20} {tier:<12} {agreement:<25} {date_str:>10}")
+
+
+def _fiscal_quarter(today):
+    """Fiscal year starts Feb 1. Q1=Feb-Apr, Q2=May-Jul, Q3=Aug-Oct, Q4=Nov-Jan."""
+    FQ_STARTS = [(2, 1), (5, 1), (8, 1), (11, 1)]
+
+    if today.month >= 2:
+        fy = today.year + 1
+    else:
+        fy = today.year
+
+    for i, (m, d) in enumerate(FQ_STARTS):
+        start_year = fy - 1 if m >= 2 else fy
+        q_start = date(start_year, m, d)
+        next_i = (i + 1) % 4
+        nm, nd = FQ_STARTS[next_i]
+        next_year = start_year if nm > m else start_year + 1
+        q_end = date(next_year, nm, nd)
+        if q_start <= today < q_end:
+            return fy, i + 1, q_start, q_end
+
+    return fy, 4, date(fy - 1, 11, 1), date(fy, 2, 1)
+
+
+def _quarter_bounds(today):
+    fy, fq, cq_start, cq1_start = _fiscal_quarter(today)
+    _, _, _, cq1_end = _fiscal_quarter(cq1_start)
+    return cq_start, cq1_start, cq1_end, fy, fq
+
+
+def _bucket_deal(close_date, cq_start, cq1_start, cq1_end):
+    if not close_date:
+        return "other"
+    d = close_date if isinstance(close_date, date) else date.fromisoformat(str(close_date)[:10])
+    if cq_start <= d < cq1_start:
+        return "cq"
+    if cq1_start <= d < cq1_end:
+        return "cq1"
+    return "other"
 
 
 def _format_open_pipeline(lines, rows, divider):
@@ -83,21 +124,37 @@ def _format_open_pipeline(lines, rows, divider):
         lines.append("  No open pipeline found.")
         return
 
-    by_source = defaultdict(lambda: {"arr": 0, "count": 0})
+    today = date.today()
+    cq_start, cq1_start, cq1_end, fy, fq = _quarter_bounds(today)
+    nq = fq + 1 if fq < 4 else 1
+    nfy = fy if fq < 4 else fy + 1
+    cq_label = f"FY{fy}Q{fq}"
+    cq1_label = f"FY{nfy}Q{nq}"
+
+    by_source = defaultdict(lambda: {"cq": 0, "cq1": 0, "total": 0, "count": 0})
     for row in rows:
         src = row.get("SOURCED_INFLUENCED") or row.get("PARTNER_DEAL_SOURCE") or "Unknown"
-        by_source[src]["arr"] += row.get("PRODUCT_ARR_USD", 0) or 0
+        arr = row.get("PRODUCT_ARR_USD", 0) or 0
+        bucket = _bucket_deal(row.get("CLOSEDATE"), cq_start, cq1_start, cq1_end)
+        by_source[src]["total"] += arr
         by_source[src]["count"] += 1
+        if bucket == "cq":
+            by_source[src]["cq"] += arr
+        elif bucket == "cq1":
+            by_source[src]["cq1"] += arr
 
-    total_arr = sum(v["arr"] for v in by_source.values())
-    total_deals = sum(v["count"] for v in by_source.values())
+    grand = {"cq": 0, "cq1": 0, "total": 0, "count": 0}
+    for v in by_source.values():
+        for k in grand:
+            grand[k] += v[k]
 
     lines.append("")
-    lines.append(f"  Total Open Pipeline:  {usd(total_arr)}  ({total_deals} deals)")
-    lines.append("")
-    lines.append("  By Partner Deal Source:")
-    for src, v in sorted(by_source.items(), key=lambda x: x[1]["arr"], reverse=True):
-        lines.append(f"    {src:<30} {usd(v['arr']):>14}  ({v['count']} deals)")
+    lines.append(f"  {'Source':<25} {cq_label + ' (CQ)':>14} {cq1_label + ' (CQ+1)':>14} {'Total $':>14} {'Deals':>8}")
+    lines.append(f"  {'─'*25} {'─'*14} {'─'*14} {'─'*14} {'─'*8}")
+    for src, v in sorted(by_source.items(), key=lambda x: x[1]["total"], reverse=True):
+        lines.append(f"  {src:<25} {usd(v['cq']):>14} {usd(v['cq1']):>14} {usd(v['total']):>14} {v['count']:>8}")
+    lines.append(f"  {'─'*25} {'─'*14} {'─'*14} {'─'*14} {'─'*8}")
+    lines.append(f"  {'TOTAL':<25} {usd(grand['cq']):>14} {usd(grand['cq1']):>14} {usd(grand['total']):>14} {grand['count']:>8}")
 
     top5 = rows[:5]
     if top5:

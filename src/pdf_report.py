@@ -106,22 +106,24 @@ def _pdf_partner_details(pdf, rows):
         pdf.cell(0, 8, "No partner account found in Salesforce.", ln=True)
         return
 
+    cols = [("Partner", 50), ("Owner", 30), ("Partner Tier", 22), ("Agreement", 40), ("Date", 20)]
+    pdf.table_header(cols)
     for row in rows:
-        pdf.label_value("Partner:", str(row.get("PARTNER_NAME", "N/A")))
-        pdf.label_value("Account Owner:", str(row.get("ACCOUNT_OWNER", "N/A")))
-        pdf.label_value("Type:", str(row.get("ACCOUNT_TYPE", "N/A")))
-        pdf.label_value("Partner Type:", str(row.get("PARTNER_TYPE", "N/A")))
-        pdf.label_value("Channel Category:", str(row.get("CHANNEL_CATEGORY", "N/A")))
-        pdf.label_value("Partner Level:", str(row.get("PARTNER_LEVEL", "N/A")))
-        pdf.label_value("Status:", str(row.get("PARTNER_STATUS", "N/A")))
-        pdf.label_value("Agreement Signed:", str(row.get("SIGNED_AGREEMENT", "N/A")))
+        name = str(row.get("PARTNER_NAME", "N/A"))
+        name = name[:26] + ".." if len(name) > 28 else name
+        owner = str(row.get("ACCOUNT_OWNER", "N/A"))
+        owner = owner[:16] + ".." if len(owner) > 18 else owner
+        tier = str(row.get("CHANNEL_CATEGORY") or "N/A")
+        agreement = str(row.get("SIGNED_AGREEMENT") or "N/A")
+        agreement = agreement[:20] + ".." if len(agreement) > 22 else agreement
         ag_date = row.get("AGREEMENT_DATE")
-        pdf.label_value("Agreement Date:", str(ag_date)[:10] if ag_date else "N/A")
-        pdf.label_value("Serviced Region:", str(row.get("SERVICED_REGION", "N/A")))
-        pdf.ln(4)
+        date_str = str(ag_date)[:10] if ag_date else "N/A"
+        pdf.table_row(cols, [name, owner, tier, agreement, date_str])
 
 
 def _pdf_open_pipeline(pdf, rows):
+    from format import _quarter_bounds, _bucket_deal
+
     pdf.section_title("3. Open Pipeline (Stages 02-06)")
 
     if not rows:
@@ -129,23 +131,41 @@ def _pdf_open_pipeline(pdf, rows):
         pdf.cell(0, 8, "No open pipeline found.", ln=True)
         return
 
-    by_source = defaultdict(lambda: {"arr": 0, "count": 0})
+    today = date.today()
+    cq_start, cq1_start, cq1_end = _quarter_bounds(today)
+    cq_label = f"Q{(today.month - 1) // 3 + 1} (CQ)"
+    cq1_label = f"Q{(cq1_start.month - 1) // 3 + 1} (CQ+1)"
+
+    by_source = defaultdict(lambda: {"cq": 0, "cq1": 0, "total": 0, "count": 0})
     for row in rows:
         src = row.get("SOURCED_INFLUENCED") or row.get("PARTNER_DEAL_SOURCE") or "Unknown"
-        by_source[src]["arr"] += row.get("PRODUCT_ARR_USD", 0) or 0
+        arr = row.get("PRODUCT_ARR_USD", 0) or 0
+        bucket = _bucket_deal(row.get("CLOSEDATE"), cq_start, cq1_start, cq1_end)
+        by_source[src]["total"] += arr
         by_source[src]["count"] += 1
+        if bucket == "cq":
+            by_source[src]["cq"] += arr
+        elif bucket == "cq1":
+            by_source[src]["cq1"] += arr
 
-    total_arr = sum(v["arr"] for v in by_source.values())
-    total_deals = sum(v["count"] for v in by_source.values())
+    grand = {"cq": 0, "cq1": 0, "total": 0, "count": 0}
+    for v in by_source.values():
+        for k in grand:
+            grand[k] += v[k]
 
-    pdf.label_value("Total Open Pipeline:", f"{usd(total_arr)}  ({total_deals} deals)")
-    pdf.ln(2)
-
-    pdf.sub_heading("By Partner Deal Source")
-    cols = [("Source", 70), ("ARR (USD)", 35), ("Deals", 20)]
+    cols = [("Source", 50), (cq_label, 30), (cq1_label, 30), ("Total $", 30), ("Deals", 20)]
     pdf.table_header(cols)
-    for src, v in sorted(by_source.items(), key=lambda x: x[1]["arr"], reverse=True):
-        pdf.table_row(cols, [src, usd(v["arr"]), str(v["count"])])
+    for src, v in sorted(by_source.items(), key=lambda x: x[1]["total"], reverse=True):
+        pdf.table_row(cols, [src, usd(v["cq"]), usd(v["cq1"]), usd(v["total"]), str(v["count"])])
+
+    pdf.set_font("ArialUni", "B", 9)
+    pdf.set_text_color(30, 30, 30)
+    pdf.set_fill_color(230, 230, 230)
+    for label, width in cols:
+        val = {"Source": "TOTAL", cq_label: usd(grand["cq"]), cq1_label: usd(grand["cq1"]),
+               "Total $": usd(grand["total"]), "Deals": str(grand["count"])}[label]
+        pdf.cell(width, 7, val, border=0, fill=True)
+    pdf.ln()
     pdf.ln(4)
 
     top5 = rows[:5]
