@@ -132,9 +132,11 @@ def _pdf_open_pipeline(pdf, rows):
         return
 
     today = date.today()
-    cq_start, cq1_start, cq1_end = _quarter_bounds(today)
-    cq_label = f"Q{(today.month - 1) // 3 + 1} (CQ)"
-    cq1_label = f"Q{(cq1_start.month - 1) // 3 + 1} (CQ+1)"
+    cq_start, cq1_start, cq1_end, fy, fq = _quarter_bounds(today)
+    nq = fq + 1 if fq < 4 else 1
+    nfy = fy if fq < 4 else fy + 1
+    cq_label = f"FY{fy}Q{fq} (CQ)"
+    cq1_label = f"FY{nfy}Q{nq} (CQ+1)"
 
     by_source = defaultdict(lambda: {"cq": 0, "cq1": 0, "total": 0, "count": 0})
     for row in rows:
