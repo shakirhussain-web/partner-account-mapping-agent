@@ -1,0 +1,6 @@
+__pycache__/
+.env
+.DS_Store
+snowflake.log
+agent-input/
+agent-output/
