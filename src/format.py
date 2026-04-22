@@ -25,7 +25,7 @@ def usd(val):
 
 
 def format_partner_report(partner_name, subscriptions, bookings,
-                          details=None, open_pipeline=None):
+                          details=None, open_pipeline=None, sourced_pipeline=None):
     lines = []
     div = "═" * 70
     thin = "─" * 70
@@ -46,6 +46,10 @@ def format_partner_report(partner_name, subscriptions, bookings,
     if open_pipeline is not None:
         lines.append("")
         _format_open_pipeline(lines, open_pipeline, thin)
+
+    if sourced_pipeline is not None:
+        lines.append("")
+        _format_sourced_pipeline(lines, sourced_pipeline, thin)
 
     lines.append("")
     lines.append(div)
@@ -205,6 +209,49 @@ def _format_open_pipeline(lines, rows, divider):
             src = src[:13] + "..." if len(src) > 16 else src
             cd_str = str(opp["closedate"])[:10] if opp["closedate"] else "N/A"
             lines.append(f"  {acct:<25} {prod:<30} {deal:<12} {src:<16} {cd_str:>12} {usd(opp['arr']):>12}")
+
+
+def _format_sourced_pipeline(lines, rows, divider):
+    lines.append("  4. SOURCED PIPELINE (Created in CQ / CQ-1 / CQ-2)")
+    lines.append(divider)
+
+    if not rows:
+        lines.append("  No sourced pipeline found.")
+        return
+
+    REGION_MAP_LOCAL = {
+        "americas": "AMER", "amer": "AMER", "na": "AMER", "north america": "AMER",
+        "emea": "EMEA", "apac": "APAC", "latam": "LATAM",
+    }
+
+    by_qtr = defaultdict(lambda: {"total": 0, "count": 0, "ai": 0, "es": 0, "ccaas": 0,
+                                   "regions": defaultdict(lambda: 0)})
+    for row in rows:
+        fq = row.get("FISCAL_YEAR_QUARTER") or "Unknown"
+        arr = row.get("OPPORTUNITY_BOOKING_ARR_USD", 0) or 0
+        region_raw = str(row.get("PRO_FORMA_REGION") or "Unknown").lower().strip()
+        region = REGION_MAP_LOCAL.get(region_raw, row.get("PRO_FORMA_REGION") or "Unknown")
+        by_qtr[fq]["total"] += arr
+        by_qtr[fq]["count"] += 1
+        by_qtr[fq]["ai"] += row.get("NEW_AI_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["es"] += row.get("ES_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["ccaas"] += row.get("CCaaS_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["regions"][region] += arr
+
+    lines.append("")
+    sorted_qtrs = sorted(by_qtr.keys())
+    for fq in sorted_qtrs:
+        v = by_qtr[fq]
+        lines.append(f"  {fq}:")
+        lines.append(f"    Total: {usd(v['total'])}  ({v['count']} deals)")
+        lines.append(f"    AI: {usd(v['ai'])}  |  ES: {usd(v['es'])}  |  CCaaS: {usd(v['ccaas'])}")
+        region_parts = []
+        for r in ["AMER", "EMEA", "APAC", "LATAM"]:
+            if v["regions"].get(r, 0) > 0:
+                region_parts.append(f"{r}: {usd(v['regions'][r])}")
+        if region_parts:
+            lines.append(f"    By Region: {' | '.join(region_parts)}")
+        lines.append("")
 
 
 def _format_book_of_business(lines, rows, divider):

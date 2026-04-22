@@ -66,7 +66,7 @@ class PartnerReport(FPDF):
 
 
 def generate_pdf(partner_name, subscriptions, bookings,
-                  details=None, open_pipeline=None):
+                  details=None, open_pipeline=None, sourced_pipeline=None):
     pdf = PartnerReport(partner_name)
     pdf.add_page()
 
@@ -90,6 +90,10 @@ def generate_pdf(partner_name, subscriptions, bookings,
     if open_pipeline is not None:
         pdf.ln(4)
         _pdf_open_pipeline(pdf, open_pipeline)
+
+    if sourced_pipeline is not None:
+        pdf.ln(4)
+        _pdf_sourced_pipeline(pdf, sourced_pipeline)
 
     filename = f"{partner_name.replace(' ', '_')}_Partner_Summary_{date.today().isoformat()}.pdf"
     filepath = os.path.join(OUTPUT_DIR, filename)
@@ -187,6 +191,45 @@ def _pdf_open_pipeline(pdf, rows):
             src = src[:14] + ".." if len(src) > 16 else src
             cd_str = str(opp["closedate"])[:10] if opp["closedate"] else "N/A"
             pdf.table_row(cols, [acct, prod, deal, src, cd_str, usd(opp["arr"])])
+
+
+def _pdf_sourced_pipeline(pdf, rows):
+    pdf.section_title("4. Sourced Pipeline (CQ / CQ-1 / CQ-2)")
+
+    if not rows:
+        pdf.set_font("ArialUni", "", 10)
+        pdf.cell(0, 8, "No sourced pipeline found.", ln=True)
+        return
+
+    REGION_MAP_LOCAL = {
+        "americas": "AMER", "amer": "AMER", "na": "AMER", "north america": "AMER",
+        "emea": "EMEA", "apac": "APAC", "latam": "LATAM",
+    }
+
+    by_qtr = defaultdict(lambda: {"total": 0, "count": 0, "ai": 0, "es": 0, "ccaas": 0,
+                                   "regions": defaultdict(lambda: 0)})
+    for row in rows:
+        fq = row.get("FISCAL_YEAR_QUARTER") or "Unknown"
+        arr = row.get("OPPORTUNITY_BOOKING_ARR_USD", 0) or 0
+        region_raw = str(row.get("PRO_FORMA_REGION") or "Unknown").lower().strip()
+        region = REGION_MAP_LOCAL.get(region_raw, row.get("PRO_FORMA_REGION") or "Unknown")
+        by_qtr[fq]["total"] += arr
+        by_qtr[fq]["count"] += 1
+        by_qtr[fq]["ai"] += row.get("NEW_AI_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["es"] += row.get("ES_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["ccaas"] += row.get("CCaaS_BOOKING_ARR_USD", 0) or 0
+        by_qtr[fq]["regions"][region] += arr
+
+    cols = [("Quarter", 25), ("Total", 25), ("Deals", 15), ("AI", 22), ("ES", 22), ("CCaaS", 22), ("AMER", 22), ("EMEA", 22), ("APAC", 22), ("LATAM", 22)]
+    pdf.table_header(cols)
+    for fq in sorted(by_qtr.keys()):
+        v = by_qtr[fq]
+        pdf.table_row(cols, [
+            fq, usd(v["total"]), str(v["count"]),
+            usd(v["ai"]), usd(v["es"]), usd(v["ccaas"]),
+            usd(v["regions"].get("AMER", 0)), usd(v["regions"].get("EMEA", 0)),
+            usd(v["regions"].get("APAC", 0)), usd(v["regions"].get("LATAM", 0)),
+        ])
 
 
 def _pdf_book_of_business(pdf, rows):

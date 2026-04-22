@@ -23,7 +23,7 @@ def _normalize_region(region):
     return REGION_MAP.get(region.lower().strip(), region)
 
 
-def _aggregate_partner(details, subscriptions, bookings, open_pipeline):
+def _aggregate_partner(details, subscriptions, bookings, open_pipeline, sourced_pipe=None):
     row = {}
 
     # Partner details
@@ -187,16 +187,40 @@ def _aggregate_partner(details, subscriptions, bookings, open_pipeline):
         else:
             row[f"pipe_industry_{i+1}"] = ""
 
+    # Sourced Pipeline by quarter and region
+    sourced_by_qtr = defaultdict(lambda: {"total": 0, "count": 0,
+                                           "regions": defaultdict(lambda: 0)})
+    for s in (sourced_pipe or []):
+        fq_val = s.get("FISCAL_YEAR_QUARTER") or "Unknown"
+        arr_val = s.get("OPPORTUNITY_BOOKING_ARR_USD", 0) or 0
+        region_raw = str(s.get("PRO_FORMA_REGION") or "Unknown").lower().strip()
+        region_val = REGION_MAP.get(region_raw, s.get("PRO_FORMA_REGION") or "Unknown")
+        sourced_by_qtr[fq_val]["total"] += arr_val
+        sourced_by_qtr[fq_val]["count"] += 1
+        sourced_by_qtr[fq_val]["regions"][region_val] += arr_val
+
+    row["sourced_by_qtr"] = dict(sourced_by_qtr)
+
     return row
 
 
 def generate_excel(partners_data):
+    from format import _fiscal_quarter
+    from datetime import timedelta
+
     today = date.today()
     _, _, _, fy, fq = _quarter_bounds(today)
     nq = fq + 1 if fq < 4 else 1
     nfy = fy if fq < 4 else fy + 1
     cq_label = f"FY{fy}Q{fq}"
     cq1_label = f"FY{nfy}Q{nq}"
+
+    fy_cq, fq_cq, cq_start, _ = _fiscal_quarter(today)
+    fy_m1, fq_m1, cqm1_start, _ = _fiscal_quarter(cq_start - timedelta(days=1))
+    fy_m2, fq_m2, _, _ = _fiscal_quarter(cqm1_start - timedelta(days=1))
+    cqm1_label = f"FY{fy_m1}Q{fq_m1}"
+    cqm2_label = f"FY{fy_m2}Q{fq_m2}"
+    sourced_qtrs = [cqm2_label, cqm1_label, cq_label]
 
     wb = Workbook()
     ws = wb.active
@@ -223,6 +247,7 @@ def generate_excel(partners_data):
         "Bookings Industry 1", "Bookings Industry 2", "Bookings Industry 3", "Bookings Industry 4", "Bookings Industry 5",
         f"Pipeline {cq_label}", f"Pipeline {cq1_label}", "Pipeline Total", "Pipeline # Deals",
         "Pipeline Industry 1", "Pipeline Industry 2", "Pipeline Industry 3", "Pipeline Industry 4", "Pipeline Industry 5",
+        f"Sourced {cqm2_label}", f"Sourced {cqm1_label}", f"Sourced {cq_label}", "Sourced Total", "Sourced # Deals",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -237,6 +262,7 @@ def generate_excel(partners_data):
             data.get("subscriptions"),
             data.get("bookings"),
             data.get("open_pipeline"),
+            data.get("sourced_pipeline"),
         )
 
         values = [
@@ -257,6 +283,14 @@ def generate_excel(partners_data):
             agg["pipe_total"], agg["pipe_deals"],
             agg["pipe_industry_1"], agg["pipe_industry_2"], agg["pipe_industry_3"], agg["pipe_industry_4"], agg["pipe_industry_5"],
         ]
+
+        # Sourced pipeline by quarter
+        sbq = agg.get("sourced_by_qtr", {})
+        sourced_total = sum(v["total"] for v in sbq.values())
+        sourced_deals = sum(v["count"] for v in sbq.values())
+        for sq in sourced_qtrs:
+            values.append(sbq.get(sq, {}).get("total", 0))
+        values.extend([sourced_total, sourced_deals])
 
         for col, val in enumerate(values, 1):
             cell = ws.cell(row=i, column=col, value=val)

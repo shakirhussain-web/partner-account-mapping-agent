@@ -5,8 +5,9 @@ import sys
 import openpyxl
 from snowflake_conn import get_connection, execute_query, close
 from queries import (reseller_subscriptions_query, partner_bookings_query,
-                     partner_details_query, partner_open_pipeline_query)
-from format import format_partner_report
+                     partner_details_query, partner_open_pipeline_query,
+                     sourced_pipeline_query)
+from format import format_partner_report, _fiscal_quarter
 from pdf_report import generate_pdf
 from excel_summary import generate_excel
 
@@ -98,6 +99,14 @@ def main():
     print(f"  Deduplicated to {len(partners)} unique partners")
     print(f"  Output format: {fmt}\n")
 
+    from datetime import date as dt_date, timedelta
+    today = dt_date.today()
+    fy, fq, cq_start, _ = _fiscal_quarter(today)
+    fy1, fq1, cqm1_start, _ = _fiscal_quarter(cq_start - timedelta(days=1))
+    fy2, fq2, _, _ = _fiscal_quarter(cqm1_start - timedelta(days=1))
+    fiscal_quarters = [f"FY{fy2}Q{fq2}", f"FY{fy1}Q{fq1}", f"FY{fy}Q{fq}"]
+    print(f"  Sourced pipeline quarters: {', '.join(fiscal_quarters)}\n")
+
     all_partner_data = []
 
     for i, (display_name, search_names) in enumerate(partners, 1):
@@ -112,15 +121,18 @@ def main():
             subs = execute_query(reseller_subscriptions_query(search_names))
             bookings = execute_query(partner_bookings_query(search_names))
             open_pipe = execute_query(partner_open_pipeline_query(search_names))
+            sourced = execute_query(sourced_pipeline_query(search_names, fiscal_quarters))
 
-            print(f"  Details: {len(details)}, Subs: {len(subs)}, Bookings: {len(bookings)}, Pipeline: {len(open_pipe)}")
+            print(f"  Details: {len(details)}, Subs: {len(subs)}, Bookings: {len(bookings)}, Pipeline: {len(open_pipe)}, Sourced: {len(sourced)}")
 
             if fmt in ("pdf", "both"):
                 report = format_partner_report(display_name, subs, bookings,
-                                               details=details, open_pipeline=open_pipe)
+                                               details=details, open_pipeline=open_pipe,
+                                               sourced_pipeline=sourced)
                 print(report)
                 pdf_path = generate_pdf(display_name, subs, bookings,
-                                        details=details, open_pipeline=open_pipe)
+                                        details=details, open_pipeline=open_pipe,
+                                        sourced_pipeline=sourced)
                 print(f"  PDF saved: {pdf_path}")
 
             all_partner_data.append((display_name, {
@@ -128,6 +140,7 @@ def main():
                 "subscriptions": subs,
                 "bookings": bookings,
                 "open_pipeline": open_pipe,
+                "sourced_pipeline": sourced,
             }))
             print()
         except Exception as e:

@@ -4,8 +4,9 @@ import os
 import sys
 from snowflake_conn import execute_query, close
 from queries import (reseller_subscriptions_query, partner_bookings_query,
-                     partner_details_query, partner_open_pipeline_query)
-from format import format_partner_report
+                     partner_details_query, partner_open_pipeline_query,
+                     sourced_pipeline_query)
+from format import format_partner_report, _fiscal_quarter
 from pdf_report import generate_pdf
 
 ALIASES_PATH = os.path.join(os.path.dirname(__file__), "aliases.json")
@@ -57,13 +58,26 @@ def main():
     open_pipeline = execute_query(partner_open_pipeline_query(search_names))
     print(f"  Open pipeline: {len(open_pipeline)} rows")
 
+    from datetime import date, timedelta
+    today = date.today()
+    fy, fq, cq_start, _ = _fiscal_quarter(today)
+    fy1, fq1, cqm1_start, _ = _fiscal_quarter(cq_start - timedelta(days=1))
+    fy2, fq2, _, _ = _fiscal_quarter(cqm1_start - timedelta(days=1))
+    fiscal_quarters = [f"FY{fy2}Q{fq2}", f"FY{fy1}Q{fq1}", f"FY{fy}Q{fq}"]
+
+    print(f"  Running sourced pipeline query ({', '.join(fiscal_quarters)})...")
+    sourced = execute_query(sourced_pipeline_query(search_names, fiscal_quarters))
+    print(f"  Sourced pipeline: {len(sourced)} rows")
+
     report = format_partner_report(partner_name, subscriptions, bookings,
-                                   details=details, open_pipeline=open_pipeline)
+                                   details=details, open_pipeline=open_pipeline,
+                                   sourced_pipeline=sourced)
     print(report)
 
     print("\n  Generating PDF...")
     pdf_path = generate_pdf(partner_name, subscriptions, bookings,
-                            details=details, open_pipeline=open_pipeline)
+                            details=details, open_pipeline=open_pipeline,
+                            sourced_pipeline=sourced)
     print(f"  PDF saved: {pdf_path}")
 
     close()
