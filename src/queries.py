@@ -42,6 +42,8 @@ SELECT
     s.name AS resellercustomer_sub_number,
     s.term_end_date AS resellercustomer_sub_renewal_date,
     s.status AS resellercustomer_sub_status,
+    sa.region_c AS resellercustomer_region,
+    sa.industry AS resellercustomer_industry,
     LISTAGG(DISTINCT rpc.name, ', ') AS product_names,
     SUM(rpc.quantity) AS total_quantity,
     MAX(rpc.billing_period) AS billing_period
@@ -52,12 +54,13 @@ LEFT JOIN cleansed.zuora.zuora_rate_plan_charges_bcv rpc ON s.id = rpc.subscript
 LEFT JOIN cleansed.zuora.zuora_products_bcv p ON rpc.product_id = p.id
 LEFT JOIN cleansed.salesforce.salesforce_zuora_customer_account_c_bcv z
   ON TRY_CAST(a.zendesk_account_id_c AS INT) = TRY_CAST(z.zendesk_account_id_c AS INT)
+LEFT JOIN cleansed.salesforce.salesforce_account_bcv sa ON a.crm_id = sa.id
 WHERE
     s.status = 'Active'
     AND (s.subscription_kind_c = 'Primary' OR s.subscription_kind_c IS NULL OR s.subscription_kind_c = '')
     AND rpc.effective_start_date <= CURRENT_DATE()
     AND rpc.effective_end_date > CURRENT_DATE()
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
 ORDER BY r.zuora_account_name ASC, a.name ASC
 """
 
@@ -180,6 +183,7 @@ WITH open_pipeline AS (
       gtm.product,
       gtm.product_arr_usd,
       gtm.product_booking_arr_usd,
+      gtm.industry,
       part.deal_type,
       part.partner,
       part.partner_deal_source,
@@ -206,6 +210,7 @@ SELECT
     product,
     product_arr_usd,
     product_booking_arr_usd,
+    industry,
     deal_type,
     partner,
     partner_deal_source,

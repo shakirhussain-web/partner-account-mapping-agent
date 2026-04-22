@@ -8,6 +8,7 @@ from queries import (reseller_subscriptions_query, partner_bookings_query,
                      partner_details_query, partner_open_pipeline_query)
 from format import format_partner_report
 from pdf_report import generate_pdf
+from excel_summary import generate_excel
 
 ALIASES_PATH = os.path.join(os.path.dirname(__file__), "aliases.json")
 INPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "agent-input")
@@ -70,13 +71,34 @@ def deduplicate(raw_names, aliases):
 
 
 def main():
+    fmt = "pdf"
+    if "--format" in sys.argv:
+        idx = sys.argv.index("--format")
+        if idx + 1 < len(sys.argv):
+            fmt = sys.argv[idx + 1].lower()
+
+    if fmt not in ("pdf", "xlsx", "both"):
+        print("Usage: python3 batch_partner_lookup.py [--format pdf|xlsx|both]")
+        sys.exit(1)
+
+    extra_names = []
+    if "--add" in sys.argv:
+        idx = sys.argv.index("--add")
+        extra_names = [n.strip() for n in sys.argv[idx + 1:] if not n.startswith("--")]
+
     print("Reading Excel files from agent-input/...")
     raw_names = extract_partners_from_excel()
+    if extra_names:
+        raw_names.update(extra_names)
+        print(f"  Added extra partners: {', '.join(extra_names)}")
     print(f"  Found {len(raw_names)} raw partner names")
 
     aliases = load_aliases()
     partners = deduplicate(raw_names, aliases)
-    print(f"  Deduplicated to {len(partners)} unique partners\n")
+    print(f"  Deduplicated to {len(partners)} unique partners")
+    print(f"  Output format: {fmt}\n")
+
+    all_partner_data = []
 
     for i, (display_name, search_names) in enumerate(partners, 1):
         label = display_name
@@ -91,18 +113,33 @@ def main():
             bookings = execute_query(partner_bookings_query(search_names))
             open_pipe = execute_query(partner_open_pipeline_query(search_names))
 
-            report = format_partner_report(display_name, subs, bookings,
-                                           details=details, open_pipeline=open_pipe)
-            print(report)
+            print(f"  Details: {len(details)}, Subs: {len(subs)}, Bookings: {len(bookings)}, Pipeline: {len(open_pipe)}")
 
-            pdf_path = generate_pdf(display_name, subs, bookings,
-                                    details=details, open_pipeline=open_pipe)
-            print(f"  PDF saved: {pdf_path}\n")
+            if fmt in ("pdf", "both"):
+                report = format_partner_report(display_name, subs, bookings,
+                                               details=details, open_pipeline=open_pipe)
+                print(report)
+                pdf_path = generate_pdf(display_name, subs, bookings,
+                                        details=details, open_pipeline=open_pipe)
+                print(f"  PDF saved: {pdf_path}")
+
+            all_partner_data.append((display_name, {
+                "details": details,
+                "subscriptions": subs,
+                "bookings": bookings,
+                "open_pipeline": open_pipe,
+            }))
+            print()
         except Exception as e:
             print(f"  ERROR: {e}\n")
 
+    if fmt in ("xlsx", "both"):
+        print("Generating Excel summary...")
+        xlsx_path = generate_excel(all_partner_data)
+        print(f"  Excel saved: {xlsx_path}")
+
     close()
-    print("Done!")
+    print("\nDone!")
 
 
 if __name__ == "__main__":
