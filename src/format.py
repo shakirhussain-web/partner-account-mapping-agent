@@ -285,24 +285,20 @@ def _format_certifications(lines, rows, divider):
         lines.append("  No certifications found.")
         return
 
-    all_completed = set()
-    all_in_progress = set()
-    all_contacts = set()
+    all_certified = set()
     for v in by_group.values():
-        all_completed |= v["completed"]
-        all_in_progress |= v["in_progress"]
-        all_contacts |= v["all"]
+        all_certified |= v["completed"]
 
     lines.append("")
-    lines.append(f"  {len(all_contacts)} people enrolled — {len(all_completed)} with completions, {len(all_in_progress)} in progress")
+    lines.append(f"  {len(all_certified)} certified people")
     lines.append("")
-    lines.append(f"  {'Course Group':<35} {'Certified':>10} {'In Progress':>12} {'Enrolled':>10}")
-    lines.append(f"  {'─'*35} {'─'*10} {'─'*12} {'─'*10}")
+    lines.append(f"  {'Course Group':<35} {'Certified':>10}")
+    lines.append(f"  {'─'*35} {'─'*10}")
 
     sorted_groups = sorted(by_group.items(), key=lambda x: len(x[1]["completed"]), reverse=True)
     for group, v in sorted_groups:
         name = group[:32] + "..." if len(group) > 35 else group
-        lines.append(f"  {name:<35} {len(v['completed']):>10} {len(v['in_progress']):>12} {len(v['all']):>10}")
+        lines.append(f"  {name:<35} {len(v['completed']):>10}")
 
 
 def _format_book_of_business(lines, rows, divider):

@@ -266,24 +266,18 @@ def _pdf_certifications(pdf, rows):
         pdf.cell(0, 8, "No certifications found.", ln=True)
         return
 
-    all_completed = set()
-    all_in_progress = set()
-    all_contacts = set()
+    all_certified = set()
     for v in by_group.values():
-        all_completed |= v["completed"]
-        all_in_progress |= v["in_progress"]
-        all_contacts |= v["all"]
+        all_certified |= v["completed"]
 
-    pdf.label_value("Enrolled:", str(len(all_contacts)))
-    pdf.label_value("With Completions:", str(len(all_completed)))
-    pdf.label_value("In Progress:", str(len(all_in_progress)))
+    pdf.label_value("Certified People:", str(len(all_certified)))
     pdf.ln(2)
 
-    cols = [("Course Group", 70), ("Certified", 25), ("In Progress", 30), ("Enrolled", 25)]
+    cols = [("Course Group", 100), ("Certified", 30)]
     pdf.table_header(cols)
     for group, v in sorted(by_group.items(), key=lambda x: len(x[1]["completed"]), reverse=True):
-        name = group[:38] + ".." if len(group) > 40 else group
-        pdf.table_row(cols, [name, str(len(v["completed"])), str(len(v["in_progress"])), str(len(v["all"]))])
+        name = group[:52] + ".." if len(group) > 54 else group
+        pdf.table_row(cols, [name, str(len(v["completed"]))])
 
 
 def _pdf_book_of_business(pdf, rows):
