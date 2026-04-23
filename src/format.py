@@ -25,7 +25,8 @@ def usd(val):
 
 
 def format_partner_report(partner_name, subscriptions, bookings,
-                          details=None, open_pipeline=None, sourced_pipeline=None):
+                          details=None, open_pipeline=None, sourced_pipeline=None,
+                          certifications=None):
     lines = []
     div = "═" * 70
     thin = "─" * 70
@@ -50,6 +51,10 @@ def format_partner_report(partner_name, subscriptions, bookings,
     if sourced_pipeline is not None:
         lines.append("")
         _format_sourced_pipeline(lines, sourced_pipeline, thin)
+
+    if certifications is not None:
+        lines.append("")
+        _format_certifications(lines, certifications, thin)
 
     lines.append("")
     lines.append(div)
@@ -252,6 +257,52 @@ def _format_sourced_pipeline(lines, rows, divider):
         if region_parts:
             lines.append(f"    By Region: {' | '.join(region_parts)}")
         lines.append("")
+
+
+def _format_certifications(lines, rows, divider):
+    lines.append("  5. CERTIFICATIONS (Skilljar)")
+    lines.append(divider)
+
+    if not rows:
+        lines.append("  No certifications found.")
+        return
+
+    by_group = defaultdict(lambda: {"completed": set(), "in_progress": set(), "all": set()})
+    for row in rows:
+        group = row.get("COURSE_GROUP") or "Ungrouped"
+        if group in ("None", "Ungrouped"):
+            continue
+        contact = row.get("CONTACT_EMAIL") or row.get("CONTACT_NAME")
+        if not contact:
+            continue
+        by_group[group]["all"].add(contact)
+        if row.get("SKILLJAR_COMPLETED_AT_C"):
+            by_group[group]["completed"].add(contact)
+        else:
+            by_group[group]["in_progress"].add(contact)
+
+    if not by_group:
+        lines.append("  No certifications found.")
+        return
+
+    all_completed = set()
+    all_in_progress = set()
+    all_contacts = set()
+    for v in by_group.values():
+        all_completed |= v["completed"]
+        all_in_progress |= v["in_progress"]
+        all_contacts |= v["all"]
+
+    lines.append("")
+    lines.append(f"  {len(all_contacts)} people enrolled — {len(all_completed)} with completions, {len(all_in_progress)} in progress")
+    lines.append("")
+    lines.append(f"  {'Course Group':<35} {'Certified':>10} {'In Progress':>12} {'Enrolled':>10}")
+    lines.append(f"  {'─'*35} {'─'*10} {'─'*12} {'─'*10}")
+
+    sorted_groups = sorted(by_group.items(), key=lambda x: len(x[1]["completed"]), reverse=True)
+    for group, v in sorted_groups:
+        name = group[:32] + "..." if len(group) > 35 else group
+        lines.append(f"  {name:<35} {len(v['completed']):>10} {len(v['in_progress']):>12} {len(v['all']):>10}")
 
 
 def _format_book_of_business(lines, rows, divider):

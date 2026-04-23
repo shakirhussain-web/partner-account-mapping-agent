@@ -222,6 +222,36 @@ ORDER BY product_arr_usd DESC
 """
 
 
+def partner_certifications_query(names):
+    name_filter = _like_clause("a.name", names)
+    return f"""
+SELECT
+    pp.NAME AS PATH_PROGRESS_NAME,
+    pp.STATUS_C,
+    pp.COURSES_COMPLETE_C,
+    pp.SKILLJAR_COMPLETED_AT_C,
+    p.SKILLJAR_TITLE_C AS PATH_NAME,
+    m.COURSE_GROUP,
+    c.NAME AS CONTACT_NAME,
+    c.EMAIL AS CONTACT_EMAIL,
+    a.NAME AS ACCOUNT_NAME,
+    a.PARTNER_LEVEL_C,
+    a.PARTNER_STATUS_C
+FROM CLEANSED.SALESFORCE.SALESFORCE_SKILLJAR_PATH_PROGRESS_C_BCV pp
+LEFT JOIN CLEANSED.SALESFORCE.SALESFORCE_CONTACT_BCV c
+    ON pp.SKILLJAR_CONTACT_C = c.ID
+LEFT JOIN CLEANSED.SALESFORCE.SALESFORCE_ACCOUNT_BCV a
+    ON c.ACCOUNT_ID = a.ID
+LEFT JOIN CLEANSED.SALESFORCE.SALESFORCE_SKILLJAR_PATH_C_BCV p
+    ON pp.SKILLJAR_PATH_C = p.ID
+LEFT JOIN FUNCTIONAL.GTM_SALES_OPS.DIM_PARTNER_COURSE_MAPPING m
+    ON p.SKILLJAR_TITLE_C = m.PUBLISHED_PATH_TILE
+WHERE {name_filter}
+  AND a.record_type_id = '01280000000Hi8UAAS'
+ORDER BY m.COURSE_GROUP, pp.STATUS_C, a.NAME
+"""
+
+
 def sourced_pipeline_query(names, fiscal_quarters):
     name_filter = _like_clause("a.name", names)
     fq_list = ", ".join(f"'{fq}'" for fq in fiscal_quarters)

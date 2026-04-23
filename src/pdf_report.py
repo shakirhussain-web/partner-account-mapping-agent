@@ -66,7 +66,8 @@ class PartnerReport(FPDF):
 
 
 def generate_pdf(partner_name, subscriptions, bookings,
-                  details=None, open_pipeline=None, sourced_pipeline=None):
+                  details=None, open_pipeline=None, sourced_pipeline=None,
+                  certifications=None):
     pdf = PartnerReport(partner_name)
     pdf.add_page()
 
@@ -94,6 +95,10 @@ def generate_pdf(partner_name, subscriptions, bookings,
     if sourced_pipeline is not None:
         pdf.ln(4)
         _pdf_sourced_pipeline(pdf, sourced_pipeline)
+
+    if certifications is not None:
+        pdf.ln(4)
+        _pdf_certifications(pdf, certifications)
 
     filename = f"{partner_name.replace(' ', '_')}_Partner_Summary_{date.today().isoformat()}.pdf"
     filepath = os.path.join(OUTPUT_DIR, filename)
@@ -230,6 +235,55 @@ def _pdf_sourced_pipeline(pdf, rows):
             usd(v["regions"].get("AMER", 0)), usd(v["regions"].get("EMEA", 0)),
             usd(v["regions"].get("APAC", 0)), usd(v["regions"].get("LATAM", 0)),
         ])
+
+
+def _pdf_certifications(pdf, rows):
+    from collections import defaultdict
+
+    pdf.section_title("5. Certifications (Skilljar)")
+
+    if not rows:
+        pdf.set_font("ArialUni", "", 10)
+        pdf.cell(0, 8, "No certifications found.", ln=True)
+        return
+
+    by_group = defaultdict(lambda: {"completed": set(), "in_progress": set(), "all": set()})
+    for row in rows:
+        group = row.get("COURSE_GROUP") or "Ungrouped"
+        if group in ("None", "Ungrouped"):
+            continue
+        contact = row.get("CONTACT_EMAIL") or row.get("CONTACT_NAME")
+        if not contact:
+            continue
+        by_group[group]["all"].add(contact)
+        if row.get("SKILLJAR_COMPLETED_AT_C"):
+            by_group[group]["completed"].add(contact)
+        else:
+            by_group[group]["in_progress"].add(contact)
+
+    if not by_group:
+        pdf.set_font("ArialUni", "", 10)
+        pdf.cell(0, 8, "No certifications found.", ln=True)
+        return
+
+    all_completed = set()
+    all_in_progress = set()
+    all_contacts = set()
+    for v in by_group.values():
+        all_completed |= v["completed"]
+        all_in_progress |= v["in_progress"]
+        all_contacts |= v["all"]
+
+    pdf.label_value("Enrolled:", str(len(all_contacts)))
+    pdf.label_value("With Completions:", str(len(all_completed)))
+    pdf.label_value("In Progress:", str(len(all_in_progress)))
+    pdf.ln(2)
+
+    cols = [("Course Group", 70), ("Certified", 25), ("In Progress", 30), ("Enrolled", 25)]
+    pdf.table_header(cols)
+    for group, v in sorted(by_group.items(), key=lambda x: len(x[1]["completed"]), reverse=True):
+        name = group[:38] + ".." if len(group) > 40 else group
+        pdf.table_row(cols, [name, str(len(v["completed"])), str(len(v["in_progress"])), str(len(v["all"]))])
 
 
 def _pdf_book_of_business(pdf, rows):

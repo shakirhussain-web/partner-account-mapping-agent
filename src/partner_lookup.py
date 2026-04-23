@@ -5,7 +5,7 @@ import sys
 from snowflake_conn import execute_query, close
 from queries import (reseller_subscriptions_query, partner_bookings_query,
                      partner_details_query, partner_open_pipeline_query,
-                     sourced_pipeline_query)
+                     sourced_pipeline_query, partner_certifications_query)
 from format import format_partner_report, _fiscal_quarter
 from pdf_report import generate_pdf
 
@@ -69,15 +69,19 @@ def main():
     sourced = execute_query(sourced_pipeline_query(search_names, fiscal_quarters))
     print(f"  Sourced pipeline: {len(sourced)} rows")
 
+    print("  Running certifications query...")
+    certs = execute_query(partner_certifications_query(search_names))
+    print(f"  Certifications: {len(certs)} rows")
+
     report = format_partner_report(partner_name, subscriptions, bookings,
                                    details=details, open_pipeline=open_pipeline,
-                                   sourced_pipeline=sourced)
+                                   sourced_pipeline=sourced, certifications=certs)
     print(report)
 
     print("\n  Generating PDF...")
     pdf_path = generate_pdf(partner_name, subscriptions, bookings,
                             details=details, open_pipeline=open_pipeline,
-                            sourced_pipeline=sourced)
+                            sourced_pipeline=sourced, certifications=certs)
     print(f"  PDF saved: {pdf_path}")
 
     close()
